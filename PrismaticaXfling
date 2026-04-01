@@ -1,0 +1,1492 @@
+if _G.KilasikGUIRunning then
+    if _G.ShowNotificationSafe then
+        _G.ShowNotificationSafe("PrismaFling is already running!")
+    end
+    return
+end
+_G.KilasikGUIRunning = true
+
+_G.KServices = setmetatable({}, {
+    __index = function(t, k)
+        local ok, s = pcall(function() return game:GetService(k) end)
+        if ok then rawset(t, k, s) return s end
+    end
+})
+_G.KServices.Players      = game:GetService("Players")
+_G.KServices.TweenService = game:GetService("TweenService")
+_G.KServices.UIS          = game:GetService("UserInputService")
+_G.KServices.RunService   = game:GetService("RunService")
+_G.KServices.CoreGui      = game:GetService("CoreGui")
+_G.KServices.StarterGui   = game:GetService("StarterGui")
+
+-- НАСТРОЙКИ
+_G.KSettings = {}
+_G.KSettings.GUI_WIDTH     = 430
+_G.KSettings.GUI_HEIGHT    = 580
+_G.KSettings.HEADER_HEIGHT = 52
+_G.KSettings.CORNER_RADIUS = 18
+_G.KSettings.IS_MOBILE     = _G.KServices.UIS.TouchEnabled and not _G.KServices.UIS.KeyboardEnabled
+_G.KSettings.GUI_OPEN      = true
+_G.KSettings.MINIMIZED     = false
+_G.KSettings.IS_ANIMATING  = false
+
+if _G.KSettings.IS_MOBILE then
+    _G.KSettings.GUI_WIDTH     = 300
+    _G.KSettings.GUI_HEIGHT    = 530
+    _G.KSettings.HEADER_HEIGHT = 44
+    _G.KSettings.CORNER_RADIUS = 14
+end
+
+_G.KColors = {
+    Base = Color3.fromRGB(18,28,48), Header = Color3.fromRGB(22,34,58), Content = Color3.fromRGB(20,30,52),
+    Card = Color3.fromRGB(26,38,64), Interactive = Color3.fromRGB(60,90,150), InteractiveHover = Color3.fromRGB(80,120,190),
+    Accent = Color3.fromRGB(120,180,255), ToggleOn = Color3.fromRGB(120,180,255), ToggleOff = Color3.fromRGB(60,70,85),
+    TextMain = Color3.fromRGB(255,255,255), TextSub = Color3.fromRGB(180,200,255), Border = Color3.fromRGB(90,140,220),
+    Warning = Color3.fromRGB(255,200,80), Section = Color3.fromRGB(22,32,55)
+}
+-- Мгновенный захват темы PrismaticaX
+if _G.PX_GetLiveColors then
+    _G.PX_C = _G.PX_GetLiveColors()
+    for k, v in pairs(_G.PX_C) do _G.KColors[k] = v end
+end
+
+-- UI / DATA / UTIL ТАБЛИЦЫ
+_G.KUI   = {}
+_G.KData = {}
+_G.KData.SelectedTargets      = {}
+_G.KData.PlayerCheckboxes     = {}
+_G.KData.FlingActive          = false
+_G.KData.SearchFilter         = ""
+_G.KData.CardCounter          = 0
+_G.KData.AutoSelectNewPlayers = false
+
+_G.KUtil = {}
+
+-- УТИЛИТЫ
+_G.KUtil.Tween = function(obj, time, props, style, direction)
+    style     = style     or Enum.EasingStyle.Quint
+    direction = direction or Enum.EasingDirection.Out
+    _G.KServices.TweenService:Create(obj, TweenInfo.new(time, style, direction), props):Play()
+end
+
+_G.KUtil.AddCorner = function(parent, radius)
+    local c = Instance.new("UICorner")
+    c.CornerRadius = UDim.new(0, radius or _G.KSettings.CORNER_RADIUS)
+    c.Parent = parent
+    return c
+end
+
+_G.KUtil.AddStroke = function(parent, color, thickness, transparency)
+    local s = Instance.new("UIStroke")
+    s.Color        = color        or _G.KColors.Border
+    s.Thickness    = thickness    or 1.5
+    s.Transparency = transparency or 0.7
+    s.Parent = parent
+    return s
+end
+
+_G.KUtil.CountTable = function(t)
+    local n = 0
+    for _ in pairs(t) do n = n + 1 end
+    return n
+end
+
+_G.KUtil.GetGui = function()
+    local ok, res = pcall(function()
+        return gethui() or _G.KServices.CoreGui
+    end)
+    if ok and res then return res end
+    return _G.KServices.Players.LocalPlayer:WaitForChild("PlayerGui")
+end
+
+-- Уничтожить старый GUI
+pcall(function()
+    local old = _G.KUtil.GetGui():FindFirstChild("PrismaFlingGUI")
+    if old then old:Destroy() end
+end)
+
+-- =============================================
+-- SCREENGUI
+-- =============================================
+_G.KUI.ScreenGui                  = Instance.new("ScreenGui")
+_G.KUI.ScreenGui.Name             = "PrismaFlingGUI"
+_G.KUI.ScreenGui.ResetOnSpawn     = false
+_G.KUI.ScreenGui.ZIndexBehavior   = Enum.ZIndexBehavior.Sibling
+_G.KUI.ScreenGui.DisplayOrder     = 2147483647
+_G.KUI.ScreenGui.IgnoreGuiInset   = true
+_G.KUI.ScreenGui.Parent           = _G.KUtil.GetGui()
+
+pcall(function()
+    if syn and syn.protect_gui then syn.protect_gui(_G.KUI.ScreenGui) end
+    _G.KUI.ScreenGui.OnTopOfCoreBlur = true
+end)
+
+-- =============================================
+-- ТЕНЬ
+-- =============================================
+_G.KUI.Shadow                        = Instance.new("ImageLabel", _G.KUI.ScreenGui)
+_G.KUI.Shadow.Name                   = "Shadow"
+_G.KUI.Shadow.BackgroundTransparency = 1
+_G.KUI.Shadow.Size                   = UDim2.fromOffset(_G.KSettings.GUI_WIDTH + 30, _G.KSettings.GUI_HEIGHT + 30)
+_G.KUI.Shadow.Position               = UDim2.fromScale(0.5, 0.5)
+_G.KUI.Shadow.AnchorPoint = Vector2.new(0.5, 0.5)
+_G.KUI.Shadow.Image = "rbxassetid://6014261993"
+_G.KUI.Shadow.ImageColor3            = Color3.new(0, 0, 0)
+_G.KUI.Shadow.ImageTransparency      = 0.6
+_G.KUI.Shadow.ScaleType              = Enum.ScaleType.Slice
+_G.KUI.Shadow.SliceCenter            = Rect.new(49, 49, 450, 450)
+_G.KUI.Shadow.ZIndex                 = 0
+_G.KUI.Shadow.Visible                = false
+
+-- =============================================
+-- ГЛАВНОЕ ОКНО
+-- =============================================
+_G.KUI.Main                          = Instance.new("Frame", _G.KUI.ScreenGui)
+_G.KUI.Main.Name                     = "MainFrame"
+_G.KUI.Main.Size                     = UDim2.fromOffset(0, 0)
+_G.KUI.Main.Position                 = UDim2.fromScale(0.5, 0.5)
+_G.KUI.Main.AnchorPoint              = Vector2.new(0.5, 0.5)
+_G.KUI.Main.BackgroundColor3         = _G.KColors.Base
+_G.KUI.Main.ClipsDescendants         = true
+_G.KUI.Main.BorderSizePixel          = 0
+_G.KUI.Main.BackgroundTransparency   = 0
+_G.KUI.Main.ZIndex                   = 1
+_G.KUI.Main.Visible                  = false
+
+_G.KUtil.AddCorner(_G.KUI.Main, _G.KSettings.CORNER_RADIUS)
+_G.KUI.MainStroke = _G.KUtil.AddStroke(_G.KUI.Main, _G.KColors.Border, 1, 0.35)
+
+-- =============================================
+-- ШАПКА (Header)
+-- =============================================
+_G.KUI.Header                        = Instance.new("Frame", _G.KUI.Main)
+_G.KUI.Header.Name                   = "Header"
+_G.KUI.Header.Size                   = UDim2.new(1, 0, 0, _G.KSettings.HEADER_HEIGHT)
+_G.KUI.Header.BackgroundTransparency = 1
+_G.KUI.Header.BorderSizePixel        = 0
+_G.KUI.Header.ZIndex                 = 3
+
+_G.KUI.HeaderLine                    = Instance.new("Frame", _G.KUI.Header)
+_G.KUI.HeaderLine.Name               = "HeaderLine"
+_G.KUI.HeaderLine.Size               = UDim2.new(1, -20, 0, 1)
+_G.KUI.HeaderLine.Position           = UDim2.new(0, 10, 1, -1)
+_G.KUI.HeaderLine.BackgroundColor3   = _G.KColors.Border
+_G.KUI.HeaderLine.BackgroundTransparency = 0.7
+_G.KUI.HeaderLine.BorderSizePixel    = 0
+_G.KUI.HeaderLine.ZIndex             = 3
+
+_G.KUI.LogoContainer                 = Instance.new("Frame", _G.KUI.Header)
+_G.KUI.LogoContainer.Size            = UDim2.fromOffset(_G.KSettings.IS_MOBILE and 32 or 40, _G.KSettings.IS_MOBILE and 32 or 40)
+_G.KUI.LogoContainer.Position        = UDim2.fromOffset(12, 6)
+_G.KUI.LogoContainer.BackgroundColor3 = _G.KColors.Card
+_G.KUI.LogoContainer.BackgroundTransparency = 0.5
+_G.KUI.LogoContainer.BorderSizePixel = 0
+_G.KUI.LogoContainer.ZIndex          = 3
+_G.KUtil.AddCorner(_G.KUI.LogoContainer, 10)
+_G.KUtil.AddStroke(_G.KUI.LogoContainer, _G.KColors.Border, 1, 0.5)
+
+_G.KUI.LogoIcon                      = Instance.new("ImageLabel", _G.KUI.LogoContainer)
+_G.KUI.LogoIcon.Size                 = UDim2.fromOffset(_G.KSettings.IS_MOBILE and 24 or 32, _G.KSettings.IS_MOBILE and 24 or 32)
+_G.KUI.LogoIcon.Position             = UDim2.fromOffset(4, 4)
+_G.KUI.LogoIcon.BackgroundTransparency = 1
+_G.KUI.LogoIcon.Image                = "rbxassetid://72998769206857"
+_G.KUI.LogoIcon.ScaleType            = Enum.ScaleType.Fit
+_G.KUI.LogoIcon.ZIndex               = 4
+
+_G.KUI.Title                         = Instance.new("TextLabel", _G.KUI.Header)
+_G.KUI.Title.Position                = UDim2.fromOffset(_G.KSettings.IS_MOBILE and 50 or 60, _G.KSettings.IS_MOBILE and 8 or 10)
+_G.KUI.Title.Size                    = UDim2.new(0, 120, 0, 20)
+_G.KUI.Title.Text                    = "PrismaFling"
+_G.KUI.Title.Font                    = Enum.Font.FredokaOne
+_G.KUI.Title.TextSize                = _G.KSettings.IS_MOBILE and 15 or 18
+_G.KUI.Title.TextXAlignment          = Enum.TextXAlignment.Left
+_G.KUI.Title.BackgroundTransparency  = 1
+_G.KUI.Title.TextColor3              = _G.KColors.TextMain
+_G.KUI.Title.ZIndex                  = 3
+
+_G.KUI.Author                        = Instance.new("TextLabel", _G.KUI.Header)
+_G.KUI.Author.Position               = UDim2.fromOffset(_G.KSettings.IS_MOBILE and 50 or 60, _G.KSettings.IS_MOBILE and 26 or 30)
+_G.KUI.Author.Size                   = UDim2.new(1, -120, 0, 14)
+_G.KUI.Author.Text                   = "by @zood3llotgk"
+_G.KUI.Author.Font                   = Enum.Font.FredokaOne
+_G.KUI.Author.TextSize               = _G.KSettings.IS_MOBILE and 10 or 12
+_G.KUI.Author.TextXAlignment         = Enum.TextXAlignment.Left
+_G.KUI.Author.BackgroundTransparency = 1
+_G.KUI.Author.TextColor3             = _G.KColors.TextMain
+_G.KUI.Author.ZIndex                 = 3
+
+-- =============================================
+-- КНОПКИ УПРАВЛЕНИЯ
+-- =============================================
+_G.KUI.Controls                      = Instance.new("Frame", _G.KUI.Header)
+_G.KUI.Controls.Name                 = "Controls"
+_G.KUI.Controls.Size                 = UDim2.fromOffset(_G.KSettings.IS_MOBILE and 65 or 75, _G.KSettings.IS_MOBILE and 26 or 30)
+_G.KUI.Controls.Position             = UDim2.new(1, _G.KSettings.IS_MOBILE and -75 or -88, 0.5, _G.KSettings.IS_MOBILE and -13 or -15)
+_G.KUI.Controls.BackgroundTransparency = 1
+_G.KUI.Controls.ZIndex               = 6
+
+_G.KUtil.MakeControlBtn = function(x, text, callback)
+    _G.KUI["CtrlBtn_"..text]                         = Instance.new("TextButton", _G.KUI.Controls)
+    _G.KUI["CtrlBtn_"..text].Size                    = UDim2.fromOffset(_G.KSettings.IS_MOBILE and 26 or 30, _G.KSettings.IS_MOBILE and 26 or 30)
+    _G.KUI["CtrlBtn_"..text].Position                = UDim2.fromOffset(x, 0)
+    _G.KUI["CtrlBtn_"..text].BackgroundColor3        = _G.KColors.Interactive
+    _G.KUI["CtrlBtn_"..text].BackgroundTransparency  = 0.5
+    _G.KUI["CtrlBtn_"..text].Text                    = text
+    _G.KUI["CtrlBtn_"..text].Font                    = Enum.Font.FredokaOne
+    _G.KUI["CtrlBtn_"..text].TextSize                = _G.KSettings.IS_MOBILE and 14 or 16
+    _G.KUI["CtrlBtn_"..text].TextColor3              = _G.KColors.TextMain
+    _G.KUI["CtrlBtn_"..text].AutoButtonColor         = false
+    _G.KUI["CtrlBtn_"..text].ZIndex                  = 6
+    _G.KUtil.AddCorner(_G.KUI["CtrlBtn_"..text], 8)
+
+    local btn = _G.KUI["CtrlBtn_"..text]
+    btn.MouseEnter:Connect(function()
+        _G.KUtil.Tween(btn, 0.15, {BackgroundTransparency = 0.2, BackgroundColor3 = _G.KColors.InteractiveHover})
+    end)
+    btn.MouseLeave:Connect(function()
+        _G.KUtil.Tween(btn, 0.15, {BackgroundTransparency = 0.5, BackgroundColor3 = _G.KColors.Interactive})
+    end)
+    btn.MouseButton1Click:Connect(callback)
+    return btn
+end
+
+_G.KUI.MinBtn = _G.KUtil.MakeControlBtn(0, "−", function()
+    if _G.KSettings.IS_ANIMATING then return end
+    _G.KSettings.IS_ANIMATING = true
+    _G.KSettings.MINIMIZED = not _G.KSettings.MINIMIZED
+
+    if _G.KSettings.MINIMIZED then
+        _G.KUI.HeaderLine.Visible = false
+        _G.KUtil.Tween(_G.KUI.Shadow, 0.35, {Size = UDim2.fromOffset(_G.KSettings.GUI_WIDTH + 30, _G.KSettings.HEADER_HEIGHT + 30)})
+        _G.KUtil.Tween(_G.KUI.Main, 0.35, {Size = UDim2.fromOffset(_G.KSettings.GUI_WIDTH, _G.KSettings.HEADER_HEIGHT)})
+        _G.KUtil.Tween(_G.KUI.ContentHolder, 0.35, {Size = UDim2.new(1, 0, 0, 0)})
+        task.delay(0.36, function() _G.KSettings.IS_ANIMATING = false end)
+    else
+        _G.KUI.HeaderLine.Visible = true
+        _G.KUtil.Tween(_G.KUI.Shadow, 0.35, {Size = UDim2.fromOffset(_G.KSettings.GUI_WIDTH + 30, _G.KSettings.GUI_HEIGHT + 30)})
+        _G.KUtil.Tween(_G.KUI.Main, 0.35, {Size = UDim2.fromOffset(_G.KSettings.GUI_WIDTH, _G.KSettings.GUI_HEIGHT)})
+        _G.KUtil.Tween(_G.KUI.ContentHolder, 0.35, {Size = UDim2.new(1, 0, 1, -_G.KSettings.HEADER_HEIGHT)})
+        task.delay(0.36, function() _G.KSettings.IS_ANIMATING = false end)
+    end
+end)
+_G.KUI.MinBtn.Name     = "MinBtn"
+_G.KUI.MinBtn.TextSize = _G.KSettings.IS_MOBILE and 20 or 22
+_G.KUI.MinBtn.Position = UDim2.new(0, 0, 0, -1)
+
+_G.KUI.CloseBtn = _G.KUtil.MakeControlBtn(_G.KSettings.IS_MOBILE and 32 or 38, "×", function()
+    _G.KUtil.StopFling()
+    _G.KUtil.Tween(_G.KUI.Main, 0.3, {Size = UDim2.fromOffset(0, 0), BackgroundTransparency = 1}, Enum.EasingStyle.Back, Enum.EasingDirection.In)
+    _G.KUtil.Tween(_G.KUI.Shadow, 0.3, {Size = UDim2.fromOffset(0, 0), ImageTransparency = 1})
+    task.delay(0.35, function()
+        if _G.KUI.ScreenGui and _G.KUI.ScreenGui.Parent then
+            _G.KUI.ScreenGui:Destroy()
+        end
+        _G.KilasikGUIRunning = false
+    end)
+end)
+_G.KUI.CloseBtn.Name     = "CloseBtn"
+_G.KUI.CloseBtn.TextSize = _G.KSettings.IS_MOBILE and 18 or 20
+
+-- CONTENT HOLDER
+_G.KUI.ContentHolder                  = Instance.new("Frame", _G.KUI.Main)
+_G.KUI.ContentHolder.Name             = "ContentHolder"
+_G.KUI.ContentHolder.Position         = UDim2.fromOffset(0, _G.KSettings.HEADER_HEIGHT)
+_G.KUI.ContentHolder.Size             = UDim2.new(1, 0, 1, -_G.KSettings.HEADER_HEIGHT)
+_G.KUI.ContentHolder.BackgroundTransparency = 1
+_G.KUI.ContentHolder.ClipsDescendants = true
+_G.KUI.ContentHolder.BorderSizePixel  = 0
+
+-- =============================================
+-- RESIZE HANDLE
+-- =============================================
+_G.KUI.Resize = Instance.new("Frame", _G.KUI.Main)
+_G.KUI.Resize.Name = "ResizeHandle"
+_G.KUI.Resize.Size = UDim2.fromOffset(24, 24)
+_G.KUI.Resize.Position = UDim2.new(1, -24, 1, -24)
+_G.KUI.Resize.BackgroundTransparency = 1
+_G.KUI.Resize.ZIndex = 10
+
+_G.KUI.ResizeLine1 = Instance.new("Frame", _G.KUI.Resize)
+_G.KUI.ResizeLine1.Size = UDim2.fromOffset(10, 2)
+_G.KUI.ResizeLine1.Position = UDim2.fromOffset(6, 14)
+_G.KUI.ResizeLine1.BackgroundColor3 = _G.KColors.Interactive
+_G.KUI.ResizeLine1.BackgroundTransparency = 0.3
+_G.KUI.ResizeLine1.BorderSizePixel = 0
+_G.KUI.ResizeLine1.Rotation = 45
+_G.KUI.ResizeLine1.ZIndex = 11
+
+_G.KUI.ResizeLine2 = Instance.new("Frame", _G.KUI.Resize)
+_G.KUI.ResizeLine2.Size = UDim2.fromOffset(10, 2)
+_G.KUI.ResizeLine2.Position = UDim2.fromOffset(10, 10)
+_G.KUI.ResizeLine2.BackgroundColor3 = _G.KColors.Interactive
+_G.KUI.ResizeLine2.BackgroundTransparency = 0.3
+_G.KUI.ResizeLine2.BorderSizePixel = 0
+_G.KUI.ResizeLine2.Rotation = 45
+_G.KUI.ResizeLine2.ZIndex = 11
+
+local _KResizing = false
+local _KResizeStartSize, _KResizeStartMouse
+local _K_MIN_W = _G.KSettings.IS_MOBILE and 240 or 340
+local _K_MAX_W = _G.KSettings.IS_MOBILE and 480 or 700
+local _K_MIN_H = _G.KSettings.IS_MOBILE and 320 or 400
+local _K_MAX_H = _G.KSettings.IS_MOBILE and 640 or 820
+
+_G.KUI.Resize.InputBegan:Connect(function(input)
+    if _G.KSettings.MINIMIZED then return end
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        _KResizing = true
+        _KResizeStartSize = _G.KUI.Main.Size
+        _KResizeStartMouse = input.Position
+    end
+end)
+
+_G.KServices.UIS.InputChanged:Connect(function(input)
+    if _G.KSettings.MINIMIZED then return end
+    if _KResizing and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+        local delta = input.Position - _KResizeStartMouse
+        local newW = math.clamp(_KResizeStartSize.X.Offset + delta.X, _K_MIN_W, _K_MAX_W)
+        local newH = math.clamp(_KResizeStartSize.Y.Offset + delta.Y, _K_MIN_H, _K_MAX_H)
+        _G.KUI.Main.Size = UDim2.fromOffset(newW, newH)
+        _G.KUI.Shadow.Size = UDim2.fromOffset(newW + 30, newH + 30)
+        _G.KSettings.GUI_WIDTH = newW
+        _G.KSettings.GUI_HEIGHT = newH
+
+        -- Пересчёт позиций/размеров всех элементов при resize
+        local btnAreaH = _G.KData.BtnAreaH
+        local btnBotPad = _G.KData.BtnBotPad
+        local midPad = _G.KData.MidPad
+        local statusH = _G.KData.StatusHeight
+        local topPad = _G.KData.TopPad
+
+        -- Кнопки — всегда прибиты к низу
+        _G.KUI.ButtonGridCard.Position = UDim2.new(0, 10, 1, -(btnAreaH + btnBotPad))
+
+        -- Список игроков — занимает всё пространство между статусом и кнопками
+        local cardTop = topPad + statusH + midPad
+        local cardBot = btnAreaH + btnBotPad + midPad
+        local cardH = newH - _G.KSettings.HEADER_HEIGHT - cardTop - cardBot
+        _G.KUI.PlayerListCard.Size = UDim2.new(1, -20, 0, cardH)
+        _G.KUI.PlayerListCard.Position = UDim2.fromOffset(10, cardTop)
+    end
+end)
+
+_G.KServices.UIS.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        if _KResizing then
+            _KResizing = false
+            pcall(function()
+                if writefile then
+                    local saveData = {guiWidth = _G.KSettings.GUI_WIDTH, guiHeight = _G.KSettings.GUI_HEIGHT}
+                    writefile("PrismaFlingSize.json", game:GetService("HttpService"):JSONEncode(saveData))
+                end
+            end)
+        end
+    end
+end)
+
+-- Загружаем сохранённый размер
+pcall(function()
+    if readfile and isfile and isfile("PrismaFlingSize.json") then
+        local saved = game:GetService("HttpService"):JSONDecode(readfile("PrismaFlingSize.json"))
+        if saved and saved.guiWidth then
+            _G.KSettings.GUI_WIDTH = math.clamp(saved.guiWidth, _K_MIN_W, _K_MAX_W)
+        end
+        if saved and saved.guiHeight then
+            _G.KSettings.GUI_HEIGHT = math.clamp(saved.guiHeight, _K_MIN_H, _K_MAX_H)
+        end
+    end
+end)
+
+-- =============================================
+-- СТАТУС (сверху, фиксированный)
+-- =============================================
+_G.KData.StatusHeight = _G.KSettings.IS_MOBILE and 32 or 36
+_G.KData.TopPad       = 10
+
+_G.KUI.StatusCard                        = Instance.new("Frame", _G.KUI.ContentHolder)
+_G.KUI.StatusCard.Name                   = "StatusCard"
+_G.KUI.StatusCard.Size                   = UDim2.new(1, -20, 0, _G.KData.StatusHeight)
+_G.KUI.StatusCard.Position               = UDim2.fromOffset(10, _G.KData.TopPad)
+_G.KUI.StatusCard.BackgroundColor3       = _G.KColors.Card
+_G.KUI.StatusCard.BackgroundTransparency = 0.3
+_G.KUI.StatusCard.BorderSizePixel        = 0
+_G.KUtil.AddCorner(_G.KUI.StatusCard, 10)
+_G.KUtil.AddStroke(_G.KUI.StatusCard, _G.KColors.Border, 1, 0.75)
+
+_G.KUI.StatusText                        = Instance.new("TextLabel", _G.KUI.StatusCard)
+_G.KUI.StatusText.Size                   = UDim2.new(1, -12, 1, 0)
+_G.KUI.StatusText.Position               = UDim2.fromOffset(14, 0)
+_G.KUI.StatusText.BackgroundTransparency = 1
+_G.KUI.StatusText.Text                   = "Select targets to fling"
+_G.KUI.StatusText.TextColor3             = _G.KColors.TextSub
+_G.KUI.StatusText.Font                   = Enum.Font.FredokaOne
+_G.KUI.StatusText.TextSize               = _G.KSettings.IS_MOBILE and 11 or 13
+_G.KUI.StatusText.TextXAlignment         = Enum.TextXAlignment.Left
+
+-- =============================================
+-- 4 КНОПКИ (снизу, фиксированные)
+-- Высота: 2 ряда по (IS_MOBILE and 42 or 48) + padding 6 между рядами + 0 снизу
+-- =============================================
+_G.KData.BtnRowH    = _G.KSettings.IS_MOBILE and 42 or 48
+_G.KData.BtnGap     = 6
+_G.KData.BtnAreaH   = _G.KData.BtnRowH * 3 + _G.KData.BtnGap * 2
+_G.KData.BtnBotPad  = 10
+
+_G.KUI.ButtonGridCard                    = Instance.new("Frame", _G.KUI.ContentHolder)
+_G.KUI.ButtonGridCard.Name               = "ButtonGridCard"
+_G.KUI.ButtonGridCard.Size               = UDim2.new(1, -20, 0, _G.KData.BtnAreaH)
+_G.KUI.ButtonGridCard.Position           = UDim2.new(0, 10, 1, -(_G.KData.BtnAreaH + _G.KData.BtnBotPad))
+_G.KUI.ButtonGridCard.BackgroundTransparency = 1
+_G.KUI.ButtonGridCard.BorderSizePixel    = 0
+
+_G.KUI.ButtonGrid                        = Instance.new("Frame", _G.KUI.ButtonGridCard)
+_G.KUI.ButtonGrid.Name                   = "ButtonGrid"
+_G.KUI.ButtonGrid.Size                   = UDim2.fromScale(1, 1)
+_G.KUI.ButtonGrid.BackgroundTransparency = 1
+_G.KUI.ButtonGrid.BorderSizePixel        = 0
+
+_G.KUI.ButtonGridLayout                  = Instance.new("UIGridLayout", _G.KUI.ButtonGrid)
+_G.KUI.ButtonGridLayout.CellSize         = UDim2.new(0.5, -4, 0, _G.KData.BtnRowH)
+_G.KUI.ButtonGridLayout.CellPadding      = UDim2.fromOffset(_G.KData.BtnGap, _G.KData.BtnGap)
+_G.KUI.ButtonGridLayout.SortOrder        = Enum.SortOrder.LayoutOrder
+_G.KUI.ButtonGridLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+_G.KUI.ButtonGridLayout.StartCorner      = Enum.StartCorner.TopLeft
+
+_G.KUtil.MakeGridButton = function(parent, text, layoutOrder, callback)
+    _G.KUI["GridBtn_" .. text]                        = Instance.new("Frame", parent)
+    _G.KUI["GridBtn_" .. text].Name                   = "GridBtn_" .. text
+    _G.KUI["GridBtn_" .. text].BackgroundColor3       = _G.KColors.Card
+    _G.KUI["GridBtn_" .. text].BackgroundTransparency = 0.3
+    _G.KUI["GridBtn_" .. text].BorderSizePixel        = 0
+    _G.KUI["GridBtn_" .. text].LayoutOrder            = layoutOrder
+    _G.KUtil.AddCorner(_G.KUI["GridBtn_" .. text], 10)
+    _G.KUtil.AddStroke(_G.KUI["GridBtn_" .. text], _G.KColors.Border, 1, 0.75)
+
+    _G.KUI["GridBtnLabel_" .. text]                   = Instance.new("TextLabel", _G.KUI["GridBtn_" .. text])
+    _G.KUI["GridBtnLabel_" .. text].Size              = UDim2.fromScale(1, 1)
+    _G.KUI["GridBtnLabel_" .. text].BackgroundTransparency = 1
+    _G.KUI["GridBtnLabel_" .. text].Text              = text
+    _G.KUI["GridBtnLabel_" .. text].Font              = Enum.Font.FredokaOne
+    _G.KUI["GridBtnLabel_" .. text].TextSize          = _G.KSettings.IS_MOBILE and 11 or 13
+    _G.KUI["GridBtnLabel_" .. text].TextColor3        = _G.KColors.TextMain
+    _G.KUI["GridBtnLabel_" .. text].TextXAlignment    = Enum.TextXAlignment.Center
+
+    _G.KUI["GridBtnClick_" .. text]                   = Instance.new("TextButton", _G.KUI["GridBtn_" .. text])
+    _G.KUI["GridBtnClick_" .. text].Size              = UDim2.fromScale(1, 1)
+    _G.KUI["GridBtnClick_" .. text].BackgroundTransparency = 1
+    _G.KUI["GridBtnClick_" .. text].Text              = ""
+    _G.KUI["GridBtnClick_" .. text].ZIndex            = 10
+    _G.KUI["GridBtnClick_" .. text].AutoButtonColor   = false
+
+    local gridBtn = _G.KUI["GridBtn_" .. text]
+    _G.KUI["GridBtnClick_" .. text].MouseEnter:Connect(function()
+        _G.KServices.TweenService:Create(gridBtn, TweenInfo.new(0.12), {BackgroundColor3 = _G.KColors.InteractiveHover, BackgroundTransparency = 0.1}):Play()
+    end)
+    _G.KUI["GridBtnClick_" .. text].MouseLeave:Connect(function()
+        _G.KServices.TweenService:Create(gridBtn, TweenInfo.new(0.12), {BackgroundColor3 = _G.KColors.Card, BackgroundTransparency = 0.3}):Play()
+    end)
+    _G.KUI["GridBtnClick_" .. text].MouseButton1Click:Connect(callback)
+
+    return _G.KUI["GridBtn_" .. text]
+end
+
+_G.KUtil.MakeGridButton(_G.KUI.ButtonGrid, "Select All", 1, function()
+    _G.KUtil.ToggleAllPlayers(true)
+end)
+_G.KUtil.MakeGridButton(_G.KUI.ButtonGrid, "Deselect All", 2, function()
+    _G.KUtil.ToggleAllPlayers(false)
+end)
+
+-- Две пустые ячейки (пустышки), которые займут 2-ый ряд в сетке (освобождают место для длинной кнопки)
+_G.KUI.Dummy1 = Instance.new("Frame", _G.KUI.ButtonGrid)
+_G.KUI.Dummy1.LayoutOrder = 3
+_G.KUI.Dummy1.BackgroundTransparency = 1
+_G.KUI.Dummy2 = Instance.new("Frame", _G.KUI.ButtonGrid)
+_G.KUI.Dummy2.LayoutOrder = 4
+_G.KUI.Dummy2.BackgroundTransparency = 1
+
+-- Создаем отдельную длинную кнопку во 2-ой строке на всю ширину
+_G.KUI.AutoSelectCard = Instance.new("Frame", _G.KUI.ButtonGridCard)
+_G.KUI.AutoSelectCard.Name = "AutoSelectCard"
+_G.KUI.AutoSelectCard.Size = UDim2.new(1, 0, 0, _G.KData.BtnRowH)
+-- Смещаем ровно на 2 строчку (высота первой строки + отступ):
+_G.KUI.AutoSelectCard.Position = UDim2.fromOffset(0, _G.KData.BtnRowH + _G.KData.BtnGap)
+_G.KUI.AutoSelectCard.BackgroundColor3 = _G.KColors.Card
+_G.KUI.AutoSelectCard.BackgroundTransparency = 0.3
+_G.KUI.AutoSelectCard.BorderSizePixel = 0
+_G.KUI.AutoSelectCard.ZIndex = 2
+_G.KUtil.AddCorner(_G.KUI.AutoSelectCard, 10)
+_G.KUtil.AddStroke(_G.KUI.AutoSelectCard, _G.KColors.Border, 1, 0.75)
+
+_G.KUI.AutoSelectLabel = Instance.new("TextLabel", _G.KUI.AutoSelectCard)
+_G.KUI.AutoSelectLabel.Size = UDim2.fromScale(1, 1)
+_G.KUI.AutoSelectLabel.BackgroundTransparency = 1
+_G.KUI.AutoSelectLabel.Text = "Auto Select: OFF"
+_G.KUI.AutoSelectLabel.Font = Enum.Font.FredokaOne
+_G.KUI.AutoSelectLabel.TextSize = _G.KSettings.IS_MOBILE and 11 or 13
+_G.KUI.AutoSelectLabel.TextColor3 = _G.KColors.TextMain
+_G.KUI.AutoSelectLabel.TextXAlignment = Enum.TextXAlignment.Center
+
+_G.KUI.AutoSelectClick = Instance.new("TextButton", _G.KUI.AutoSelectCard)
+_G.KUI.AutoSelectClick.Size = UDim2.fromScale(1, 1)
+_G.KUI.AutoSelectClick.BackgroundTransparency = 1
+_G.KUI.AutoSelectClick.Text = ""
+_G.KUI.AutoSelectClick.ZIndex = 11
+_G.KUI.AutoSelectClick.AutoButtonColor = false
+
+_G.KUI.AutoSelectClick.MouseEnter:Connect(function()
+    _G.KServices.TweenService:Create(_G.KUI.AutoSelectCard, TweenInfo.new(0.12), {BackgroundColor3 = _G.KColors.InteractiveHover, BackgroundTransparency = 0.1}):Play()
+end)
+_G.KUI.AutoSelectClick.MouseLeave:Connect(function()
+    _G.KServices.TweenService:Create(_G.KUI.AutoSelectCard, TweenInfo.new(0.12), {BackgroundColor3 = _G.KColors.Card, BackgroundTransparency = 0.3}):Play()
+end)
+_G.KUI.AutoSelectClick.MouseButton1Click:Connect(function()
+    _G.KData.AutoSelectNewPlayers = not _G.KData.AutoSelectNewPlayers
+    if _G.KData.AutoSelectNewPlayers then
+        _G.KUI.AutoSelectLabel.Text = "Auto Select: ON"
+    else
+        _G.KUI.AutoSelectLabel.Text = "Auto Select: OFF"
+    end
+end)
+
+-- Третий ряд для кнопок Fling (благодаря LayoutOrder = 5 и 6, они встанут на 3-ю строку)
+_G.KUtil.MakeGridButton(_G.KUI.ButtonGrid, "Start Fling", 5, function()
+    _G.KUtil.StartFling()
+end)
+_G.KUtil.MakeGridButton(_G.KUI.ButtonGrid, "Stop Fling", 6, function()
+    _G.KUtil.StopFling()
+end)
+
+
+-- СПИСОК ИГРОКОВ
+_G.KData.MidPad        = 8
+_G.KData.PlayerCardTop = _G.KData.TopPad + _G.KData.StatusHeight + _G.KData.MidPad
+_G.KData.PlayerCardBot = _G.KData.BtnAreaH + _G.KData.BtnBotPad + _G.KData.MidPad
+_G.KData.PlayerCardH   = _G.KSettings.GUI_HEIGHT - _G.KSettings.HEADER_HEIGHT - _G.KData.PlayerCardTop - _G.KData.PlayerCardBot
+
+_G.KUI.PlayerListCard                    = Instance.new("Frame", _G.KUI.ContentHolder)
+_G.KUI.PlayerListCard.Name               = "PlayerListCard"
+_G.KUI.PlayerListCard.Size               = UDim2.new(1, -20, 0, _G.KData.PlayerCardH)
+_G.KUI.PlayerListCard.Position           = UDim2.fromOffset(10, _G.KData.PlayerCardTop)
+_G.KUI.PlayerListCard.BackgroundColor3   = _G.KColors.Card
+_G.KUI.PlayerListCard.BackgroundTransparency = 0.4
+_G.KUI.PlayerListCard.BorderSizePixel    = 0
+_G.KUtil.AddCorner(_G.KUI.PlayerListCard, 12)
+_G.KUtil.AddStroke(_G.KUI.PlayerListCard, _G.KColors.Border, 1, 0.7)
+
+-- Заголовок списка
+_G.KUI.PlayerListTitle                   = Instance.new("TextLabel", _G.KUI.PlayerListCard)
+_G.KUI.PlayerListTitle.Size              = UDim2.new(1, -20, 0, _G.KSettings.IS_MOBILE and 26 or 30)
+_G.KUI.PlayerListTitle.Position          = UDim2.fromOffset(14, 0)
+_G.KUI.PlayerListTitle.BackgroundTransparency = 1
+_G.KUI.PlayerListTitle.Text              = "Player List"
+_G.KUI.PlayerListTitle.Font              = Enum.Font.FredokaOne
+_G.KUI.PlayerListTitle.TextSize          = _G.KSettings.IS_MOBILE and 11 or 13
+_G.KUI.PlayerListTitle.TextXAlignment    = Enum.TextXAlignment.Left
+_G.KUI.PlayerListTitle.TextColor3        = _G.KColors.TextMain
+
+-- =============================================
+-- ПОИСК (без иконки, только текст белый)
+-- =============================================
+_G.KData.SearchH   = _G.KSettings.IS_MOBILE and 28 or 30
+_G.KData.SearchTop = _G.KSettings.IS_MOBILE and 28 or 32
+
+_G.KUI.SearchBox                         = Instance.new("Frame", _G.KUI.PlayerListCard)
+_G.KUI.SearchBox.Name                    = "SearchBox"
+_G.KUI.SearchBox.Size                    = UDim2.new(1, -20, 0, _G.KData.SearchH)
+_G.KUI.SearchBox.Position                = UDim2.fromOffset(10, _G.KData.SearchTop)
+_G.KUI.SearchBox.BackgroundColor3        = _G.KColors.Section
+_G.KUI.SearchBox.BackgroundTransparency  = 0.2
+_G.KUI.SearchBox.BorderSizePixel         = 0
+_G.KUtil.AddCorner(_G.KUI.SearchBox, 8)
+_G.KUtil.AddStroke(_G.KUI.SearchBox, _G.KColors.Border, 1, 0.7)
+
+_G.KUI.SearchInput                       = Instance.new("TextBox", _G.KUI.SearchBox)
+_G.KUI.SearchInput.Name                  = "SearchInput"
+_G.KUI.SearchInput.Size                  = UDim2.fromScale(1, 1)
+_G.KUI.SearchInput.Position              = UDim2.fromOffset(0, 0)
+_G.KUI.SearchInput.BackgroundTransparency = 1
+_G.KUI.SearchInput.BorderSizePixel       = 0
+_G.KUI.SearchInput.Text                  = ""
+_G.KUI.SearchInput.PlaceholderText       = "Search players..."
+_G.KUI.SearchInput.PlaceholderColor3     = _G.KColors.TextSub
+_G.KUI.SearchInput.TextColor3            = Color3.fromRGB(255, 255, 255)
+_G.KUI.SearchInput.Font                  = Enum.Font.FredokaOne
+_G.KUI.SearchInput.TextSize              = _G.KSettings.IS_MOBILE and 11 or 13
+_G.KUI.SearchInput.ClearTextOnFocus      = false
+_G.KUI.SearchInput.TextXAlignment        = Enum.TextXAlignment.Left
+_G.KUI.SearchInput.ZIndex                = 3
+_G.KUI.SearchInput.TextStrokeTransparency = 1
+
+_G.KUI.SearchInputPadding                = Instance.new("UIPadding", _G.KUI.SearchInput)
+_G.KUI.SearchInputPadding.PaddingLeft    = UDim.new(0, 10)
+_G.KUI.SearchInputPadding.PaddingRight   = UDim.new(0, 10)
+
+_G.KUI.SearchInput:GetPropertyChangedSignal("Text"):Connect(function()
+    _G.KData.SearchFilter = _G.KUI.SearchInput.Text
+    _G.KUtil.RefreshPlayerList()
+end)
+
+-- СКРОЛЛ ИГРОКОВ
+_G.KData.ScrollTop = _G.KData.SearchTop + _G.KData.SearchH + 6
+_G.KUI.PlayerScroll                      = Instance.new("ScrollingFrame", _G.KUI.PlayerListCard)
+_G.KUI.PlayerScroll.Name                 = "PlayerScroll"
+_G.KUI.PlayerScroll.Size                 = UDim2.new(1, -8, 1, -(_G.KData.ScrollTop + 6))
+_G.KUI.PlayerScroll.Position             = UDim2.fromOffset(4, _G.KData.ScrollTop)
+_G.KUI.PlayerScroll.BackgroundTransparency = 1
+_G.KUI.PlayerScroll.BorderSizePixel      = 0
+_G.KUI.PlayerScroll.ScrollBarThickness   = 4
+_G.KUI.PlayerScroll.ScrollBarImageColor3 = _G.KColors.Interactive
+_G.KUI.PlayerScroll.ScrollBarImageTransparency = 0.2
+_G.KUI.PlayerScroll.CanvasSize           = UDim2.new(0, 0, 0, 0)
+_G.KUI.PlayerScroll.AutomaticCanvasSize  = Enum.AutomaticSize.Y
+_G.KUI.PlayerScroll.ScrollingDirection   = Enum.ScrollingDirection.Y
+_G.KUI.PlayerScroll.ElasticBehavior      = Enum.ElasticBehavior.Never
+
+_G.KUI.PlayerScrollLayout                = Instance.new("UIListLayout", _G.KUI.PlayerScroll)
+_G.KUI.PlayerScrollLayout.SortOrder      = Enum.SortOrder.LayoutOrder
+_G.KUI.PlayerScrollLayout.Padding        = UDim.new(0, 4)
+
+_G.KUI.PlayerScrollPadding               = Instance.new("UIPadding", _G.KUI.PlayerScroll)
+_G.KUI.PlayerScrollPadding.PaddingTop    = UDim.new(0, 2)
+_G.KUI.PlayerScrollPadding.PaddingBottom = UDim.new(0, 2)
+_G.KUI.PlayerScrollPadding.PaddingLeft   = UDim.new(0, 2)
+_G.KUI.PlayerScrollPadding.PaddingRight  = UDim.new(0, 8)
+
+-- DRAG
+_G.KMainDragButton                       = Instance.new("TextButton", _G.KUI.Header)
+_G.KMainDragButton.Name                  = "DragButton"
+_G.KMainDragButton.Size                  = UDim2.new(1, _G.KSettings.IS_MOBILE and -150 or -180, 1, 0)
+_G.KMainDragButton.Position              = UDim2.fromScale(0, 0)
+_G.KMainDragButton.BackgroundTransparency = 1
+_G.KMainDragButton.Text                  = ""
+_G.KMainDragButton.AutoButtonColor       = false
+_G.KMainDragButton.Active                = true
+_G.KMainDragButton.ZIndex                = 100
+
+_G.KDragging  = false
+_G.KDragStart = nil
+_G.KStartPos  = nil
+_G.KCurTween  = nil
+_G.KShadTween = nil
+
+_G.KMainDragButton.InputBegan:Connect(function(input)
+    if _G.KSettings.MINIMIZED then return end
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        _G.KDragging  = true
+        _G.KDragStart = input.Position
+        _G.KStartPos  = _G.KUI.Main.Position
+        if _G.KCurTween  then _G.KCurTween:Cancel()  _G.KCurTween  = nil end
+        if _G.KShadTween then _G.KShadTween:Cancel() _G.KShadTween = nil end
+    end
+end)
+
+_G.KDragChangedConn = _G.KServices.UIS.InputChanged:Connect(function(input)
+    if not _G.KDragging then return end
+    if _G.KSettings.MINIMIZED then return end
+    if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+        _G.KDragDelta = input.Position - _G.KDragStart
+        _G.KTargetPos = UDim2.new(
+            _G.KStartPos.X.Scale,
+            _G.KStartPos.X.Offset + _G.KDragDelta.X,
+            _G.KStartPos.Y.Scale,
+            _G.KStartPos.Y.Offset + _G.KDragDelta.Y
+        )
+        if _G.KCurTween  then _G.KCurTween:Cancel()  end
+        if _G.KShadTween then _G.KShadTween:Cancel() end
+        _G.KCurTween  = _G.KServices.TweenService:Create(_G.KUI.Main,   TweenInfo.new(0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Position = _G.KTargetPos})
+        _G.KShadTween = _G.KServices.TweenService:Create(_G.KUI.Shadow, TweenInfo.new(0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Position = _G.KTargetPos})
+        _G.KCurTween:Play()
+        _G.KShadTween:Play()
+    end
+end)
+
+_G.KDragEndedConn = _G.KServices.UIS.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        _G.KDragging = false
+    end
+end)
+
+-- =============================================
+-- ЛОГИКА: UpdateStatus
+-- =============================================
+_G.KUtil.UpdateStatus = function()
+    local count = _G.KUtil.CountTable(_G.KData.SelectedTargets)
+    if _G.KData.FlingActive then
+        _G.KUI.StatusText.Text       = "Flinging: " .. count .. " target(s)"
+        _G.KUI.StatusText.TextColor3 = _G.KColors.TextMain
+    else
+        _G.KUI.StatusText.Text       = "Selected: " .. count .. " target(s)"
+        _G.KUI.StatusText.TextColor3 = _G.KColors.TextMain
+    end
+end
+
+-- =============================================
+-- ЛОГИКА: RefreshPlayerList
+-- =============================================
+_G.KUtil.RefreshPlayerList = function()
+    for _, child in pairs(_G.KUI.PlayerScroll:GetChildren()) do
+        if child:IsA("Frame") then child:Destroy() end
+    end
+    _G.KData.PlayerCheckboxes = {}
+
+    local playerList = _G.KServices.Players:GetPlayers()
+    table.sort(playerList, function(a, b) return a.Name:lower() < b.Name:lower() end)
+
+    local searchText = (_G.KData.SearchFilter or ""):lower()
+
+    for _, player in ipairs(playerList) do
+        if player ~= _G.KServices.Players.LocalPlayer then
+            if searchText == "" or player.Name:lower():find(searchText, 1, true) then
+
+                local entry                      = Instance.new("Frame", _G.KUI.PlayerScroll)
+                entry.Name                       = "Entry_" .. player.Name
+                entry.Size                       = UDim2.new(1, 0, 0, _G.KSettings.IS_MOBILE and 40 or 46)
+                entry.BackgroundColor3           = _G.KData.SelectedTargets[player.Name] and _G.KColors.Interactive or _G.KColors.Card
+                entry.BackgroundTransparency     = _G.KData.SelectedTargets[player.Name] and 0.15 or 0.3
+                entry.BorderSizePixel            = 0
+                _G.KUtil.AddCorner(entry, 10)
+                _G.KUtil.AddStroke(entry, _G.KColors.Border, 1, 0.75)
+
+                -- Аватар слева
+                local avatarImg                  = Instance.new("ImageLabel", entry)
+                avatarImg.Name                   = "Avatar"
+                avatarImg.Size                   = UDim2.fromOffset(_G.KSettings.IS_MOBILE and 30 or 34, _G.KSettings.IS_MOBILE and 30 or 34)
+                avatarImg.Position               = UDim2.new(0, 8, 0.5, _G.KSettings.IS_MOBILE and -15 or -17)
+                avatarImg.BackgroundColor3       = _G.KColors.Card
+                avatarImg.BorderSizePixel        = 0
+                avatarImg.Image                  = "https://www.roblox.com/headshot-thumbnail/image?userId=" .. player.UserId .. "&width=48&height=48&format=png"
+                avatarImg.ScaleType              = Enum.ScaleType.Crop
+                
+                _G["KAvatarCorner_" .. player.Name] = Instance.new("UICorner", avatarImg)
+                _G["KAvatarCorner_" .. player.Name].CornerRadius = UDim.new(1, 0)
+
+                _G["KAvatarStroke_" .. player.Name] = Instance.new("UIStroke", avatarImg)
+                _G["KAvatarStroke_" .. player.Name].Color = _G.KColors.Border
+                _G["KAvatarStroke_" .. player.Name].Transparency = 0.6
+                _G["KAvatarStroke_" .. player.Name].Thickness = 1
+
+                -- Имя игрока
+                local nameLabel                  = Instance.new("TextLabel", entry)
+                nameLabel.Name                   = "NameLabel"
+                nameLabel.Size                   = UDim2.new(1, _G.KSettings.IS_MOBILE and -80 or -90, 1, 0)
+                nameLabel.Position               = UDim2.fromOffset(_G.KSettings.IS_MOBILE and 46 or 50, 0)
+                nameLabel.BackgroundTransparency = 1
+                nameLabel.Text                   = player.Name
+                nameLabel.TextColor3             = _G.KColors.TextMain
+                nameLabel.Font                   = Enum.Font.FredokaOne
+                nameLabel.TextSize               = _G.KSettings.IS_MOBILE and 11 or 13
+                nameLabel.TextXAlignment         = Enum.TextXAlignment.Left
+
+                -- Чекбокс справа
+                local cbSize = _G.KSettings.IS_MOBILE and 20 or 22
+                local checkBox                   = Instance.new("Frame", entry)
+                checkBox.Name                    = "CheckBox"
+                checkBox.Size                    = UDim2.fromOffset(cbSize, cbSize)
+                checkBox.Position                = UDim2.new(1, -(cbSize + 10), 0.5, -math.floor(cbSize / 2))
+                checkBox.BackgroundColor3        = _G.KData.SelectedTargets[player.Name] and _G.KColors.ToggleOn or _G.KColors.ToggleOff
+                checkBox.BorderSizePixel         = 0
+                _G.KUtil.AddCorner(checkBox, 6)
+                _G.KUtil.AddStroke(checkBox, _G.KColors.Border, 1.2, 0.4)
+
+                local checkMark                  = Instance.new("TextLabel", checkBox)
+                checkMark.Name                   = "CheckMark"
+                checkMark.Size                   = UDim2.fromScale(1, 1)
+                checkMark.BackgroundTransparency = 1
+                checkMark.Text                   = "✓"
+                checkMark.TextColor3             = Color3.new(1, 1, 1)
+                checkMark.Font                   = Enum.Font.GothamBold
+                checkMark.TextSize               = _G.KSettings.IS_MOBILE and 16 or 18
+                checkMark.TextScaled             = false
+                checkMark.Visible                = (_G.KData.SelectedTargets[player.Name] ~= nil)
+
+                -- Кликабельная область
+                local clickArea                  = Instance.new("TextButton", entry)
+                clickArea.Size                   = UDim2.fromScale(1, 1)
+                clickArea.BackgroundTransparency = 1
+                clickArea.Text                   = ""
+                clickArea.ZIndex                 = 10
+                clickArea.AutoButtonColor        = false
+
+                clickArea.MouseButton1Click:Connect(function()
+                    if _G.KData.SelectedTargets[player.Name] then
+                        _G.KData.SelectedTargets[player.Name] = nil
+                        checkMark.Visible = false
+                        _G.KUtil.Tween(checkBox, 0.15, {BackgroundColor3 = _G.KColors.ToggleOff})
+                        _G.KUtil.Tween(entry, 0.15, {BackgroundColor3 = _G.KColors.Card, BackgroundTransparency = 0.3})
+                    else
+                        _G.KData.SelectedTargets[player.Name] = player
+                        checkMark.Visible = true
+                        _G.KUtil.Tween(checkBox, 0.15, {BackgroundColor3 = _G.KColors.ToggleOn})
+                        _G.KUtil.Tween(entry, 0.15, {BackgroundColor3 = _G.KColors.Interactive, BackgroundTransparency = 0.15})
+                    end
+                    _G.KUtil.UpdateStatus()
+                end)
+
+                clickArea.MouseEnter:Connect(function()
+                    if not _G.KData.SelectedTargets[player.Name] then
+                        _G.KServices.TweenService:Create(entry, TweenInfo.new(0.12), {BackgroundColor3 = _G.KColors.InteractiveHover, BackgroundTransparency = 0.1}):Play()
+                    end
+                end)
+                clickArea.MouseLeave:Connect(function()
+                    if not _G.KData.SelectedTargets[player.Name] then
+                        _G.KServices.TweenService:Create(entry, TweenInfo.new(0.12), {BackgroundColor3 = _G.KColors.Card, BackgroundTransparency = 0.3}):Play()
+                    end
+                end)
+
+                _G.KData.PlayerCheckboxes[player.Name] = {Entry = entry, CheckBox = checkBox, CheckMark = checkMark}
+            end
+        end
+    end
+    _G.KUtil.UpdateStatus()
+end
+
+-- =============================================
+-- ЛОГИКА: ToggleAllPlayers
+-- =============================================
+_G.KUtil.ToggleAllPlayers = function(select)
+    for _, player in ipairs(_G.KServices.Players:GetPlayers()) do
+        if player ~= _G.KServices.Players.LocalPlayer then
+            if select then
+                _G.KData.SelectedTargets[player.Name] = player
+            else
+                _G.KData.SelectedTargets[player.Name] = nil
+            end
+            local cb = _G.KData.PlayerCheckboxes[player.Name]
+            if cb then
+                -- Убираем твины, чтобы не было лагов/зависаний при спаме на 40+ игроков
+                if select then
+                    cb.CheckMark.Visible = true
+                    cb.CheckBox.BackgroundColor3 = _G.KColors.ToggleOn
+                    cb.Entry.BackgroundColor3 = _G.KColors.Interactive
+                    cb.Entry.BackgroundTransparency = 0.15
+                else
+                    cb.CheckMark.Visible = false
+                    cb.CheckBox.BackgroundColor3 = _G.KColors.ToggleOff
+                    cb.Entry.BackgroundColor3 = _G.KColors.Card
+                    cb.Entry.BackgroundTransparency = 0.3
+                end
+            end
+        end
+    end
+    _G.KUtil.UpdateStatus()
+end
+
+-- ЛОГИКА: StartFling / StopFling
+_G.OldPos = nil
+_G.FPDH = workspace.FallenPartsDestroyHeight
+
+_G.KUtil.SkidFling = function(TargetPlayer)
+    _G.SF_Character = _G.KServices.Players.LocalPlayer.Character
+    _G.SF_Humanoid = _G.SF_Character and _G.SF_Character:FindFirstChildOfClass("Humanoid")
+    _G.SF_RootPart = _G.SF_Humanoid and _G.SF_Humanoid.RootPart
+    _G.SF_TCharacter = TargetPlayer.Character
+    if not _G.SF_TCharacter then return end
+    
+    _G.SF_THumanoid = nil
+    _G.SF_TRootPart = nil
+    _G.SF_THead = nil
+    _G.SF_Accessory = nil
+    _G.SF_Handle = nil
+    
+    if _G.SF_TCharacter:FindFirstChildOfClass("Humanoid") then
+        _G.SF_THumanoid = _G.SF_TCharacter:FindFirstChildOfClass("Humanoid")
+    end
+    if _G.SF_THumanoid and _G.SF_THumanoid.RootPart then
+        _G.SF_TRootPart = _G.SF_THumanoid.RootPart
+    end
+    if _G.SF_TCharacter:FindFirstChild("Head") then
+        _G.SF_THead = _G.SF_TCharacter.Head
+    end
+    if _G.SF_TCharacter:FindFirstChildOfClass("Accessory") then
+        _G.SF_Accessory = _G.SF_TCharacter:FindFirstChildOfClass("Accessory")
+    end
+    if _G.SF_Accessory and _G.SF_Accessory:FindFirstChild("Handle") then
+        _G.SF_Handle = _G.SF_Accessory.Handle
+    end
+    
+        if _G.SF_Character and _G.SF_Humanoid and _G.SF_RootPart then
+            if _G.SF_RootPart.Velocity.Magnitude < 50 and _G.SF_Humanoid.FloorMaterial ~= Enum.Material.Air then
+                _G.OldPos = _G.SF_RootPart.CFrame
+            end
+            
+            if _G.SF_THumanoid and _G.SF_THumanoid.Sit then
+                if _G.ShowNotificationSafe then _G.ShowNotificationSafe("Error: " .. TargetPlayer.Name .. " is sitting") end
+                return
+            end
+            
+            if _G.SF_THead then
+                workspace.CurrentCamera.CameraSubject = _G.SF_THead
+            elseif _G.SF_Handle then
+                workspace.CurrentCamera.CameraSubject = _G.SF_Handle
+            elseif _G.SF_THumanoid and _G.SF_TRootPart then
+                workspace.CurrentCamera.CameraSubject = _G.SF_THumanoid
+            end
+            
+            if not _G.SF_TCharacter:FindFirstChildWhichIsA("BasePart") then
+                return
+            end
+            
+            _G.SF_FPos = function(BasePart, Pos, Ang)
+                _G.SF_RootPart.CFrame = CFrame.new(BasePart.Position) * Pos * Ang
+                _G.SF_Character:SetPrimaryPartCFrame(CFrame.new(BasePart.Position) * Pos * Ang)
+                _G.SF_RootPart.Velocity = Vector3.new(9e7, 9e7 * 10, 9e7)
+                _G.SF_RootPart.RotVelocity = Vector3.new(9e8, 9e8, 9e8)
+            end
+            
+            _G.SF_SFBasePart = function(BasePart)
+                _G.SF_TimeToWait = 2
+                _G.SF_Time = tick()
+                _G.SF_Angle = 0
+                repeat
+                    if _G.SF_RootPart and _G.SF_THumanoid then
+                        if BasePart.Velocity.Magnitude < 50 then
+                            _G.SF_Angle = _G.SF_Angle + 100
+                            _G.SF_FPos(BasePart, CFrame.new(0, 1.5, 0) + _G.SF_THumanoid.MoveDirection * BasePart.Velocity.Magnitude / 1.25, CFrame.Angles(math.rad(_G.SF_Angle),0 ,0))
+                            task.wait()
+                            _G.SF_FPos(BasePart, CFrame.new(0, -1.5, 0) + _G.SF_THumanoid.MoveDirection * BasePart.Velocity.Magnitude / 1.25, CFrame.Angles(math.rad(_G.SF_Angle), 0, 0))
+                            task.wait()
+                            _G.SF_FPos(BasePart, CFrame.new(0, 1.5, 0) + _G.SF_THumanoid.MoveDirection * BasePart.Velocity.Magnitude / 1.25, CFrame.Angles(math.rad(_G.SF_Angle),0 ,0))
+                            task.wait()
+                            _G.SF_FPos(BasePart, CFrame.new(0, -1.5, 0) + _G.SF_THumanoid.MoveDirection * BasePart.Velocity.Magnitude / 1.25, CFrame.Angles(math.rad(_G.SF_Angle), 0, 0))
+                            task.wait()
+                            _G.SF_FPos(BasePart, CFrame.new(0, 1.5, 0) + _G.SF_THumanoid.MoveDirection, CFrame.Angles(math.rad(_G.SF_Angle),0 ,0))
+                            task.wait()
+                            _G.SF_FPos(BasePart, CFrame.new(0, -1.5, 0) + _G.SF_THumanoid.MoveDirection, CFrame.Angles(math.rad(_G.SF_Angle), 0, 0))
+                            task.wait()
+                        else
+                            _G.SF_FPos(BasePart, CFrame.new(0, 1.5, _G.SF_THumanoid.WalkSpeed), CFrame.Angles(math.rad(90), 0, 0))
+                            task.wait()
+                            _G.SF_FPos(BasePart, CFrame.new(0, -1.5, -_G.SF_THumanoid.WalkSpeed), CFrame.Angles(0, 0, 0))
+                            task.wait()
+                            _G.SF_FPos(BasePart, CFrame.new(0, 1.5, _G.SF_THumanoid.WalkSpeed), CFrame.Angles(math.rad(90), 0, 0))
+                            task.wait()
+                            
+                            _G.SF_FPos(BasePart, CFrame.new(0, -1.5, 0), CFrame.Angles(math.rad(90), 0, 0))
+                            task.wait()
+                            _G.SF_FPos(BasePart, CFrame.new(0, -1.5, 0), CFrame.Angles(0, 0, 0))
+                            task.wait()
+                            _G.SF_FPos(BasePart, CFrame.new(0, -1.5, 0), CFrame.Angles(math.rad(90), 0, 0))
+                            task.wait()
+                            _G.SF_FPos(BasePart, CFrame.new(0, -1.5, 0), CFrame.Angles(0, 0, 0))
+                            task.wait()
+                        end
+                    end
+                until _G.SF_Time + _G.SF_TimeToWait < tick() or not _G.KData.FlingActive
+            end
+            
+            workspace.FallenPartsDestroyHeight = 0/0
+            
+            -- Очищаем любые старые BodyVelocity, чтобы они не скапливались при спаме
+            if _G.SF_RootPart then
+                for _, v in pairs(_G.SF_RootPart:GetChildren()) do
+                    if v.Name == "FlingBV" and v:IsA("BodyVelocity") then
+                        v:Destroy()
+                    end
+                end
+            end
+            
+            local sf_bv_local = Instance.new("BodyVelocity")
+            sf_bv_local.Name = "FlingBV"
+            sf_bv_local.Parent = _G.SF_RootPart
+            sf_bv_local.Velocity = Vector3.new(0, 0, 0)
+            sf_bv_local.MaxForce = Vector3.new(9e9, 9e9, 9e9)
+            
+            _G.SF_Humanoid:SetStateEnabled(Enum.HumanoidStateType.Seated, false)
+            
+            if _G.SF_TRootPart then
+                _G.SF_SFBasePart(_G.SF_TRootPart)
+            elseif _G.SF_THead then
+                _G.SF_SFBasePart(_G.SF_THead)
+            elseif _G.SF_Handle then
+                _G.SF_SFBasePart(_G.SF_Handle)
+            else
+                if _G.ShowNotificationSafe then _G.ShowNotificationSafe("Error: " .. TargetPlayer.Name .. " has no valid parts") end
+                return
+            end
+            
+            if sf_bv_local then sf_bv_local:Destroy() end
+            _G.SF_Humanoid:SetStateEnabled(Enum.HumanoidStateType.Seated, true)
+            workspace.CurrentCamera.CameraSubject = _G.SF_Humanoid
+            
+            if _G.OldPos then
+                local restoreTime = tick()
+                repeat
+                    _G.SF_RootPart.CFrame = _G.OldPos * CFrame.new(0, .5, 0)
+                    _G.SF_Character:SetPrimaryPartCFrame(_G.OldPos * CFrame.new(0, .5, 0))
+                    _G.SF_Humanoid:ChangeState("GettingUp")
+                    for _, part in pairs(_G.SF_Character:GetChildren()) do
+                        if part:IsA("BasePart") then
+                            part.Velocity, part.RotVelocity = Vector3.new(), Vector3.new()
+                        end
+                    end
+                    task.wait()
+                until (_G.SF_RootPart.Position - _G.OldPos.p).Magnitude < 25 or tick() - restoreTime > 1
+                workspace.FallenPartsDestroyHeight = _G.FPDH
+            end
+        else
+            if _G.ShowNotificationSafe then _G.ShowNotificationSafe("Error: Your character is not ready") end
+            return
+        end
+end
+
+_G.KUtil.StartFling = function()
+    if _G.KData.FlingActive then return end
+    
+    _G.SF_TargetCount = _G.KUtil.CountTable(_G.KData.SelectedTargets)
+    if _G.SF_TargetCount == 0 then
+        _G.KUI.StatusText.Text       = "No targets selected"
+        _G.KUI.StatusText.TextColor3 = _G.KColors.Warning
+        task.delay(1, function()
+            _G.KUI.StatusText.Text       = "Select targets to fling"
+            _G.KUI.StatusText.TextColor3 = _G.KColors.TextSub
+        end)
+        return
+    end
+    
+    _G.KData.FlingActive = true
+    if _G.AntiFling then _G.AntiFling.FlingActive = true end
+    
+    _G.KUtil.UpdateStatus()
+    if _G.ShowNotificationSafe then _G.ShowNotificationSafe("Started flinging " .. _G.SF_TargetCount .. " targets") end
+    
+    task.spawn(function()
+        while _G.KData.FlingActive do
+            _G.SF_ValidTargets = {}
+            for name, player in pairs(_G.KData.SelectedTargets) do
+                if type(player) == "userdata" and player.Parent then
+                    _G.SF_ValidTargets[name] = player
+                else
+                    _G.KData.SelectedTargets[name] = nil
+                    if _G.KData.PlayerCheckboxes and _G.KData.PlayerCheckboxes[name] then
+                        pcall(function()
+                            _G.KData.PlayerCheckboxes[name].CheckMark.Visible = false
+                            _G.KUtil.Tween(_G.KData.PlayerCheckboxes[name].CheckBox, 0.15, {BackgroundColor3 = _G.KColors.ToggleOff})
+                            _G.KUtil.Tween(_G.KData.PlayerCheckboxes[name].Entry, 0.15, {BackgroundColor3 = _G.KColors.Card, BackgroundTransparency = 0.3})
+                        end)
+                    end
+                end
+            end
+            
+            for name, player in pairs(_G.SF_ValidTargets) do
+                if _G.KData.FlingActive and _G.KData.SelectedTargets[name] then
+                    _G.KUtil.SkidFling(player)
+                    task.wait(0.1)
+                elseif not _G.KData.FlingActive then
+                    break
+                end
+            end
+            
+            _G.KUtil.UpdateStatus()
+            task.wait(0.5)
+        end
+    end)
+end
+
+_G.KUtil.StopFling = function()
+    if not _G.KData.FlingActive then return end
+    _G.KData.FlingActive = false
+    if _G.AntiFling then _G.AntiFling.FlingActive = false end
+    
+    if _G.KServices.Players.LocalPlayer.Character and _G.KServices.Players.LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+        for _, v in pairs(_G.KServices.Players.LocalPlayer.Character.HumanoidRootPart:GetChildren()) do
+            if v.Name == "FlingBV" and v:IsA("BodyVelocity") then
+                v:Destroy()
+            end
+        end
+    end
+    
+    _G.KUtil.UpdateStatus()
+    if _G.ShowNotificationSafe then _G.ShowNotificationSafe("Fling has been stopped") end
+end
+
+-- =============================================
+-- TOGGLE GUI
+-- =============================================
+_G.KToggleGui = function()
+    if not _G.KUI.ScreenGui or not _G.KUI.ScreenGui.Parent then return end
+    _G.KSettings.GUI_OPEN = not _G.KSettings.GUI_OPEN
+    _G.KUI.ScreenGui.Enabled = true
+
+    _G.KToggleTarget = nil
+    if _G.KSettings.GUI_OPEN then
+        _G.KToggleTarget = UDim2.fromOffset(_G.KSettings.GUI_WIDTH, _G.KSettings.MINIMIZED and _G.KSettings.HEADER_HEIGHT or _G.KSettings.GUI_HEIGHT)
+    else
+        _G.KToggleTarget = UDim2.fromOffset(0, 0)
+    end
+
+    _G.KUtil.Tween(_G.KUI.Main, 0.35, {Size = _G.KToggleTarget})
+    _G.KUtil.Tween(_G.KUI.Shadow, 0.35, {
+        Size = _G.KToggleTarget + UDim2.fromOffset(30, 30),
+        ImageTransparency = 1
+    })
+
+    if not _G.KSettings.GUI_OPEN then
+        task.delay(0.38, function()
+            if not _G.KSettings.GUI_OPEN then
+                _G.KUI.ScreenGui.Enabled = false
+            end
+        end)
+    end
+end
+
+-- ИГРОКИ: добавление/удаление
+_G.KServices.Players.PlayerAdded:Connect(function(player)
+    if _G.KData.AutoSelectNewPlayers then
+        _G.KData.SelectedTargets[player.Name] = player
+    end
+    _G.KUtil.RefreshPlayerList()
+end)
+_G.KServices.Players.PlayerRemoving:Connect(function(player)
+    _G.KData.SelectedTargets[player.Name] = nil
+    _G.KUtil.RefreshPlayerList()
+end)
+
+-- АНИМАЦИЯ ОТКРЫТИЯ
+_G.KUI.Main.Visible   = true
+_G.KUI.Shadow.Visible = true
+_G.KUI.Shadow.Size    = UDim2.fromOffset(0, 0)
+_G.KUI.Shadow.ImageTransparency = 1
+
+_G.KUtil.Tween(_G.KUI.Main, 0.5, {Size = UDim2.fromOffset(_G.KSettings.GUI_WIDTH, _G.KSettings.GUI_HEIGHT)}, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
+_G.KUtil.Tween(_G.KUI.Shadow, 0.5, {
+    Size = UDim2.fromOffset(_G.KSettings.GUI_WIDTH + 30, _G.KSettings.GUI_HEIGHT + 30),
+    ImageTransparency = 1
+}, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
+
+-- =============================================
+-- ИНИЦИАЛИЗАЦИЯ
+-- =============================================
+_G.KUtil.RefreshPlayerList()
+_G.KUtil.UpdateStatus()
+
+-- =============================================
+-- СИСТЕМА УВЕДОМЛЕНИЙ (Из PrismaticaX)
+-- =============================================
+_G.NotificationCount = 0
+_G.NotifFrames = {}
+_G.NotifStrokes = {}
+_G.NotifShadows = {}
+_G.NotifTexts = {}
+_G.NotifBars = {}
+_G.NotifBarFills = {}
+_G.NotificationContainer = nil
+
+_G.NOTIF_DISPLAY_TIME = 2.0
+_G.NOTIF_APPEAR_TIME = 0.4
+_G.NOTIF_DISAPPEAR_TIME = 0.3
+
+_G.CreateNotificationContainer = function()
+    if _G.NotificationContainer and _G.NotificationContainer.Parent then
+        return
+    end
+    _G.PX_NotifScreenGui = Instance.new("ScreenGui")
+    _G.PX_NotifScreenGui.Name = "PrismaticaXFling_Notifs"
+    _G.PX_NotifScreenGui.ResetOnSpawn = false
+    _G.PX_NotifScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+    _G.PX_NotifScreenGui.DisplayOrder = 2147483646
+    _G.PX_NotifScreenGui.IgnoreGuiInset = true
+    _G.PX_NotifScreenGui.Enabled = true
+    pcall(function()
+        _G.PX_NotifScreenGui.Parent = game:GetService("CoreGui")
+    end)
+    if not _G.PX_NotifScreenGui.Parent then
+        _G.PX_NotifScreenGui.Parent = game.Players.LocalPlayer:WaitForChild("PlayerGui")
+    end
+
+    _G.NotificationContainer = Instance.new("Frame", _G.PX_NotifScreenGui)
+    _G.NotificationContainer.Name = "NotificationContainer"
+    _G.NotificationContainer.Size = UDim2.fromOffset(_G.KSettings.IS_MOBILE and 210 or 270, 400)
+    _G.NotificationContainer.Position = UDim2.new(1, _G.KSettings.IS_MOBILE and -218 or -278, 1, -410)
+    _G.NotificationContainer.BackgroundTransparency = 1
+    _G.NotificationContainer.BorderSizePixel = 0
+    _G.NotificationContainer.ZIndex = 50000
+    _G.NotificationContainer.ClipsDescendants = false
+
+    _G.NotificationLayout = Instance.new("UIListLayout", _G.NotificationContainer)
+    _G.NotificationLayout.SortOrder = Enum.SortOrder.LayoutOrder
+    _G.NotificationLayout.VerticalAlignment = Enum.VerticalAlignment.Bottom
+    _G.NotificationLayout.HorizontalAlignment = Enum.HorizontalAlignment.Right
+    _G.NotificationLayout.Padding = UDim.new(0, 6)
+end
+
+_G.ScheduleNotificationRemoval = function(notifId, notifW)
+    task.delay(_G.NOTIF_DISPLAY_TIME, function()
+        if not _G.NotifFrames or not _G.NotifFrames[notifId] or not _G.NotifFrames[notifId].Parent then return end
+
+        _G.KServices.TweenService:Create(_G.NotifFrames[notifId], TweenInfo.new(_G.NOTIF_DISAPPEAR_TIME, Enum.EasingStyle.Quint, Enum.EasingDirection.In), {
+            Size = UDim2.new(0, 0, 0, _G.KSettings.IS_MOBILE and 36 or 42),
+            BackgroundTransparency = 1
+        }):Play()
+
+        if _G.NotifStrokes[notifId] and _G.NotifStrokes[notifId].Parent then
+            _G.KServices.TweenService:Create(_G.NotifStrokes[notifId], TweenInfo.new(_G.NOTIF_DISAPPEAR_TIME), {
+                Transparency = 1
+            }):Play()
+        end
+
+        if _G.NotifTexts[notifId] and _G.NotifTexts[notifId].Parent then
+            _G.KServices.TweenService:Create(_G.NotifTexts[notifId], TweenInfo.new(_G.NOTIF_DISAPPEAR_TIME * 0.7), {
+                TextTransparency = 1
+            }):Play()
+        end
+
+        task.delay(_G.NOTIF_DISAPPEAR_TIME + 0.05, function()
+            if _G.NotifFrames[notifId] and _G.NotifFrames[notifId].Parent then
+                _G.NotifFrames[notifId]:Destroy()
+            end
+            _G.NotifFrames[notifId] = nil
+            if _G.NotifStrokes then _G.NotifStrokes[notifId] = nil end
+            if _G.NotifShadows then _G.NotifShadows[notifId] = nil end
+            if _G.NotifTexts then _G.NotifTexts[notifId] = nil end
+            if _G.NotifBars then _G.NotifBars[notifId] = nil end
+            if _G.NotifBarFills then _G.NotifBarFills[notifId] = nil end
+        end)
+    end)
+end
+
+_G.ShowNotificationSafe = function(text)
+    _G.CreateNotificationContainer()
+
+    _G.PX_Max_Notifs = 5
+    _G.Current_Notifs = _G.NotificationContainer:GetChildren()
+    _G.Notif_Count = 0
+    _G.To_Remove = {}
+    for _, c in ipairs(_G.Current_Notifs) do
+        if c:IsA("Frame") and string.match(c.Name, "^Notification_") then
+            _G.Notif_Count = _G.Notif_Count + 1
+            table.insert(_G.To_Remove, c)
+        end
+    end
+    if _G.Notif_Count >= _G.PX_Max_Notifs then
+        table.sort(_G.To_Remove, function(a, b) return a.LayoutOrder > b.LayoutOrder end)
+        local removeCount = _G.Notif_Count - _G.PX_Max_Notifs + 1
+        for i = 1, removeCount do
+            if _G.To_Remove[i] then
+                _G.To_Remove[i]:Destroy()
+            end
+        end
+    end
+
+    _G.NotificationCount = _G.NotificationCount + 1
+    _G.CurrentNotifId = _G.NotificationCount
+
+    _G.PX_NotifW = _G.KSettings.IS_MOBILE and 210 or 270
+    _G.PX_NotifH = _G.KSettings.IS_MOBILE and 36 or 42
+
+    _G.NotifFrames[_G.CurrentNotifId] = Instance.new("Frame", _G.NotificationContainer)
+    _G.NotifFrames[_G.CurrentNotifId].Name = "Notification_" .. _G.CurrentNotifId
+    _G.NotifFrames[_G.CurrentNotifId].BackgroundColor3 = _G.KColors.Base
+    _G.NotifFrames[_G.CurrentNotifId].BackgroundTransparency = _G.PX_targetTrans or 0.3
+    _G.NotifFrames[_G.CurrentNotifId].Size = UDim2.fromOffset(0, _G.PX_NotifH)
+    _G.NotifFrames[_G.CurrentNotifId].LayoutOrder = -_G.CurrentNotifId
+    _G.NotifFrames[_G.CurrentNotifId].ClipsDescendants = true
+    Instance.new("UICorner", _G.NotifFrames[_G.CurrentNotifId]).CornerRadius = UDim.new(0, 10)
+
+    _G.NotifStrokes[_G.CurrentNotifId] = Instance.new("UIStroke", _G.NotifFrames[_G.CurrentNotifId])
+    _G.NotifStrokes[_G.CurrentNotifId].Color = _G.KColors.Border
+    _G.NotifStrokes[_G.CurrentNotifId].Transparency = 0.4
+    _G.NotifStrokes[_G.CurrentNotifId].Thickness = 2
+
+    _G.NotifShadows[_G.CurrentNotifId] = Instance.new("ImageLabel", _G.NotifFrames[_G.CurrentNotifId])
+    _G.NotifShadows[_G.CurrentNotifId].Name = "Shadow"
+    _G.NotifShadows[_G.CurrentNotifId].Size = UDim2.new(1, 12, 1, 12)
+    _G.NotifShadows[_G.CurrentNotifId].Position = UDim2.fromOffset(-6, -6)
+    _G.NotifShadows[_G.CurrentNotifId].BackgroundTransparency = 1
+    _G.NotifShadows[_G.CurrentNotifId].Image = "rbxassetid://6014261993"
+    _G.NotifShadows[_G.CurrentNotifId].ImageColor3 = Color3.new(0, 0, 0)
+    _G.NotifShadows[_G.CurrentNotifId].ImageTransparency = 1
+    _G.NotifShadows[_G.CurrentNotifId].ScaleType = Enum.ScaleType.Slice
+    _G.NotifShadows[_G.CurrentNotifId].SliceCenter = Rect.new(49, 49, 450, 450)
+    _G.NotifShadows[_G.CurrentNotifId].ZIndex = -1
+
+    _G.NotifTexts[_G.CurrentNotifId] = Instance.new("TextLabel", _G.NotifFrames[_G.CurrentNotifId])
+    _G.NotifTexts[_G.CurrentNotifId].Size = UDim2.new(1, -16, 1, -8)
+    _G.NotifTexts[_G.CurrentNotifId].Position = UDim2.fromOffset(8, 0)
+    _G.NotifTexts[_G.CurrentNotifId].BackgroundTransparency = 1
+    _G.NotifTexts[_G.CurrentNotifId].Text = text
+    _G.NotifTexts[_G.CurrentNotifId].Font = Enum.Font.FredokaOne
+    _G.NotifTexts[_G.CurrentNotifId].TextSize = _G.KSettings.IS_MOBILE and 11 or 13
+    _G.NotifTexts[_G.CurrentNotifId].TextColor3 = _G.KColors.TextMain
+    _G.NotifTexts[_G.CurrentNotifId].TextTransparency = 0
+    _G.NotifTexts[_G.CurrentNotifId].TextXAlignment = Enum.TextXAlignment.Left
+    _G.NotifTexts[_G.CurrentNotifId].TextWrapped = true
+    _G.NotifTexts[_G.CurrentNotifId].ZIndex = 50001
+
+    _G.NotifBars[_G.CurrentNotifId] = Instance.new("Frame", _G.NotifFrames[_G.CurrentNotifId])
+    _G.NotifBars[_G.CurrentNotifId].Name = "TimerBarBg"
+    _G.NotifBars[_G.CurrentNotifId].Size = UDim2.new(1, -16, 0, 2)
+    _G.NotifBars[_G.CurrentNotifId].Position = UDim2.new(0, 8, 1, -4)
+    _G.NotifBars[_G.CurrentNotifId].BackgroundColor3 = _G.KColors.Interactive
+    _G.NotifBars[_G.CurrentNotifId].BackgroundTransparency = 0.6
+    _G.NotifBars[_G.CurrentNotifId].BorderSizePixel = 0
+    _G.NotifBars[_G.CurrentNotifId].ZIndex = 50001
+    Instance.new("UICorner", _G.NotifBars[_G.CurrentNotifId]).CornerRadius = UDim.new(1, 0)
+
+    _G.NotifBarFills[_G.CurrentNotifId] = Instance.new("Frame", _G.NotifBars[_G.CurrentNotifId])
+    _G.NotifBarFills[_G.CurrentNotifId].Name = "TimerBarFill"
+    _G.NotifBarFills[_G.CurrentNotifId].Size = UDim2.fromScale(1, 1)
+    _G.NotifBarFills[_G.CurrentNotifId].BackgroundColor3 = _G.KColors.Accent
+    _G.NotifBarFills[_G.CurrentNotifId].BackgroundTransparency = 0
+    _G.NotifBarFills[_G.CurrentNotifId].BorderSizePixel = 0
+    _G.NotifBarFills[_G.CurrentNotifId].ZIndex = 50002
+    Instance.new("UICorner", _G.NotifBarFills[_G.CurrentNotifId]).CornerRadius = UDim.new(1, 0)
+
+    _G.ShowNotification = _G.ShowNotificationSafe
+
+    ;(function(id, w, h)
+        _G.KServices.TweenService:Create(_G.NotifFrames[id], TweenInfo.new(0.4, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+            Size = UDim2.fromOffset(w, h)
+        }):Play()
+        task.delay(0.4, function()
+            if not _G.NotifBarFills[id] or not _G.NotifBarFills[id].Parent then return end
+            _G.KServices.TweenService:Create(_G.NotifBarFills[id], TweenInfo.new(_G.NOTIF_DISPLAY_TIME, Enum.EasingStyle.Linear, Enum.EasingDirection.In), {
+                Size = UDim2.fromScale(0, 1)
+            }):Play()
+        end)
+    end)(_G.CurrentNotifId, _G.PX_NotifW, _G.PX_NotifH)
+
+    _G.ScheduleNotificationRemoval(_G.CurrentNotifId, _G.PX_NotifW)
+end
+
+-- ИДЕАЛЬНАЯ СИНХРОНИЗАЦИЯ ПРОЗРАЧНОСТИ И ЦВЕТОВ
+if _G.FlingHeartbeatConnection then _G.FlingHeartbeatConnection:Disconnect() end
+
+_G.KSettings.GUI_OPACITY = 50 
+
+-- Функция мгновенного обновления цветов (чтобы первое уведомление не было синим)
+_G.PX_ManualSync = function()
+    if _G.PX_ReadyToSync == true and _G.PX_GetLiveColors then
+        local pxColors = _G.PX_GetLiveColors()
+        _G.KColors.Base = pxColors.Base or _G.KColors.Base
+        _G.KColors.Accent = pxColors.Accent or _G.KColors.Accent
+        _G.KColors.Border = pxColors.Border or _G.KColors.Border
+        _G.KColors.TextMain = pxColors.TextMain or _G.KColors.TextMain
+        _G.KColors.TextSub = pxColors.TextSub or _G.KColors.TextSub
+        _G.KColors.Interactive = pxColors.Interactive or _G.KColors.Interactive
+        _G.KColors.Card = pxColors.Card or _G.KColors.Card
+        _G.KColors.Section = pxColors.Section or _G.KColors.Section
+        _G.KColors.ToggleOn = pxColors.ToggleOn or _G.KColors.ToggleOn
+        _G.KColors.ToggleOff = pxColors.ToggleOff or _G.KColors.ToggleOff
+    end
+end
+
+_G.PX_ManualSync() -- Запускаем синхронизацию сразу
+_G.ShowNotificationSafe("PrismaFling GUI Loaded successfully!") -- Теперь оно будет правильного цвета!
+
+pcall(function()
+    if isfile and isfile("PrismaticaXSettings.json") then
+        local pxData = _G.KServices.HttpService:JSONDecode(readfile("PrismaticaXSettings.json"))
+        if type(pxData) == "table" and pxData.guiOpacity then
+            _G.KSettings.GUI_OPACITY = pxData.guiOpacity
+        end
+    end
+end)
+
+_G.PX_targetTrans = math.clamp(_G.KSettings.GUI_OPACITY / 100, 0, 1)
+if _G.KUI.Main then _G.KUI.Main.BackgroundTransparency = _G.PX_targetTrans end
+
+_G.FlingHeartbeatConnection = _G.KServices.RunService.Heartbeat:Connect(function()
+    if not _G.KUI.Main or not _G.KUI.Main.Parent then return end
+    
+    if _G.PX_ReadyToSync == true and _G.guiOpacityTrans ~= nil then
+        _G.PX_targetTrans = _G.guiOpacityTrans
+    end
+    
+    if _G.KSettings.GUI_OPEN and not _G.KSettings.IS_ANIMATING then
+        _G.KUI.Main.BackgroundTransparency = _G.PX_targetTrans
+    end
+    
+    if _G.PX_ReadyToSync == true and _G.PX_GetLiveColors then
+        local pxColors = _G.PX_GetLiveColors()
+        
+        if pxColors and _G.KColors.Base ~= pxColors.Base then
+            _G.KColors.Base = pxColors.Base
+            _G.KColors.Header = pxColors.Header or _G.KColors.Base
+            _G.KColors.Content = pxColors.Content or _G.KColors.Base
+            _G.KColors.Card = pxColors.Card or _G.KColors.Base
+            _G.KColors.Section = pxColors.Section or _G.KColors.Base
+            _G.KColors.Interactive = pxColors.Interactive or _G.KColors.Base
+            _G.KColors.InteractiveHover = pxColors.InteractiveHover or _G.KColors.Base
+            _G.KColors.Accent = pxColors.Accent or _G.KColors.Base
+            _G.KColors.Border = pxColors.Border or _G.KColors.Base
+            _G.KColors.ToggleOn = pxColors.ToggleOn or _G.KColors.Interactive
+            _G.KColors.ToggleOff = pxColors.ToggleOff or _G.KColors.Card
+            _G.KColors.TextMain = pxColors.TextMain or Color3.fromRGB(255,255,255)
+            _G.KColors.TextSub = pxColors.TextSub or Color3.fromRGB(180,180,180)
+            _G.KColors.Warning = pxColors.Warning or _G.KColors.Interactive
+            _G.KColors.Error = pxColors.Error or _G.KColors.Interactive
+
+            pcall(function()
+                local tTime = 0.4
+                
+                if _G.KUI.Main then _G.KUtil.Tween(_G.KUI.Main, tTime, {BackgroundColor3 = _G.KColors.Base}) end
+                if _G.KUI.HeaderLine then _G.KUtil.Tween(_G.KUI.HeaderLine, tTime, {BackgroundColor3 = _G.KColors.Border}) end
+                if _G.KUI.LogoContainer then _G.KUtil.Tween(_G.KUI.LogoContainer, tTime, {BackgroundColor3 = _G.KColors.Card}) end
+                if _G.KUI.Title then _G.KUtil.Tween(_G.KUI.Title, tTime, {TextColor3 = _G.KColors.TextMain}) end
+                if _G.KUI.Author then _G.KUtil.Tween(_G.KUI.Author, tTime, {TextColor3 = _G.KColors.TextMain}) end
+                
+                if _G.KUI.MinBtn then 
+                    _G.KUtil.Tween(_G.KUI.MinBtn, tTime, {BackgroundColor3 = _G.KColors.Interactive, TextColor3 = _G.KColors.TextMain}) 
+                end
+                if _G.KUI.CloseBtn then 
+                    _G.KUtil.Tween(_G.KUI.CloseBtn, tTime, {BackgroundColor3 = _G.KColors.Interactive, TextColor3 = _G.KColors.TextMain}) 
+                end
+
+                if _G.KUI.StatusCard then _G.KUtil.Tween(_G.KUI.StatusCard, tTime, {BackgroundColor3 = _G.KColors.Card}) end
+                if _G.KUI.StatusText then _G.KUtil.Tween(_G.KUI.StatusText, tTime, {TextColor3 = _G.KColors.TextSub}) end
+                
+                if _G.KUI.AutoSelectCard then _G.KUtil.Tween(_G.KUI.AutoSelectCard, tTime, {BackgroundColor3 = _G.KColors.Card}) end
+                if _G.KUI.AutoSelectLabel then _G.KUtil.Tween(_G.KUI.AutoSelectLabel, tTime, {TextColor3 = _G.KColors.TextMain}) end
+                
+                if _G.KUI.PlayerListCard then _G.KUtil.Tween(_G.KUI.PlayerListCard, tTime, {BackgroundColor3 = _G.KColors.Card}) end
+                if _G.KUI.PlayerListTitle then _G.KUtil.Tween(_G.KUI.PlayerListTitle, tTime, {TextColor3 = _G.KColors.TextMain}) end
+
+                if _G.KUI.SearchBox then _G.KUtil.Tween(_G.KUI.SearchBox, tTime, {BackgroundColor3 = _G.KColors.Section}) end
+                if _G.KUI.SearchInput then 
+                    _G.KUtil.Tween(_G.KUI.SearchInput, tTime, {TextColor3 = _G.KColors.TextMain, PlaceholderColor3 = _G.KColors.TextSub}) 
+                end
+                if _G.KUI.PlayerScroll then 
+                    _G.KUtil.Tween(_G.KUI.PlayerScroll, tTime, {ScrollBarImageColor3 = _G.KColors.Interactive}) 
+                end
+
+                local btns = {"Select All", "Deselect All", "Start Fling", "Stop Fling"}
+                for _, b in pairs(btns) do
+                    if _G.KUI["GridBtn_" .. b] then 
+                        _G.KUtil.Tween(_G.KUI["GridBtn_" .. b], tTime, {BackgroundColor3 = _G.KColors.Card}) 
+                    end
+                    if _G.KUI["GridBtnLabel_" .. b] then 
+                        _G.KUtil.Tween(_G.KUI["GridBtnLabel_" .. b], tTime, {TextColor3 = _G.KColors.TextMain}) 
+                    end
+                end
+
+                if _G.KUI.PlayerScroll then
+                    for _, child in pairs(_G.KUI.PlayerScroll:GetChildren()) do
+                        if child:IsA("Frame") and string.match(child.Name, "^Entry_") then
+                            local pName = string.sub(child.Name, 7)
+                            local isSelected = _G.KData.SelectedTargets and _G.KData.SelectedTargets[pName]
+                            
+                            _G.KUtil.Tween(child, tTime, {BackgroundColor3 = isSelected and _G.KColors.Interactive or _G.KColors.Card})
+                            
+                            local txt = child:FindFirstChild("NameLabel")
+                            if txt then _G.KUtil.Tween(txt, tTime, {TextColor3 = _G.KColors.TextMain}) end
+                            
+                            local cb = child:FindFirstChild("CheckBox")
+                            if cb then
+                                _G.KUtil.Tween(cb, tTime, {BackgroundColor3 = isSelected and _G.KColors.ToggleOn or _G.KColors.ToggleOff})
+                            end
+                        end
+                    end
+                end
+
+                if _G.KUI.Main then
+                    for _, elem in pairs(_G.KUI.Main:GetDescendants()) do
+                        if elem:IsA("UIStroke") then
+                            _G.KUtil.Tween(elem, tTime, {Color = _G.KColors.Border})
+                        end
+                    end
+                end
+            end)
+        end
+    end
+end)
