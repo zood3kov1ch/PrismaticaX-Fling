@@ -196,7 +196,7 @@ _G.KUI.LogoIcon.ZIndex               = 4
 _G.KUI.Title                         = Instance.new("TextLabel", _G.KUI.Header)
 _G.KUI.Title.Position                = UDim2.fromOffset(_G.KSettings.IS_MOBILE and 50 or 60, _G.KSettings.IS_MOBILE and 8 or 10)
 _G.KUI.Title.Size                    = UDim2.new(0, 120, 0, 20)
-_G.KUI.Title.Text                    = "PrismaFling"
+_G.KUI.Title.Text                    = "PrismaticaX Fling"
 _G.KUI.Title.Font                    = Enum.Font.FredokaOne
 _G.KUI.Title.TextSize                = _G.KSettings.IS_MOBILE and 15 or 18
 _G.KUI.Title.TextXAlignment          = Enum.TextXAlignment.Left
@@ -1458,6 +1458,13 @@ _G.FlingHeartbeatConnection = _G.KServices.RunService.Heartbeat:Connect(function
                     if _G.KUI["GridBtnLabel_" .. b] then 
                         _G.KUtil.Tween(_G.KUI["GridBtnLabel_" .. b], tTime, {TextColor3 = _G.KColors.TextMain}) 
                     end
+                end
+
+                if _G.KUI.ResizeLine1 then
+                    _G.KUtil.Tween(_G.KUI.ResizeLine1, tTime, {BackgroundColor3 = _G.KColors.Interactive})
+                end
+                if _G.KUI.ResizeLine2 then
+                    _G.KUtil.Tween(_G.KUI.ResizeLine2, tTime, {BackgroundColor3 = _G.KColors.Interactive})
                 end
 
                 if _G.KUI.PlayerScroll then
